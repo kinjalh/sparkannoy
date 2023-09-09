@@ -1,9 +1,15 @@
 from __future__ import annotations
+import time
 import numpy as np
 import random
 import multiprocessing as mp
-import utils
 from pyspark.sql import SparkSession
+
+
+def sort_dist_to_v(v: np.ndarray, x: np.ndarray) -> np.ndarray:
+    f = np.vectorize(lambda u: np.linalg.norm(u - v))
+    idxs = np.argsort(f(x), axis=0)[:, 0]
+    return np.take(x, idxs, axis=0)
 
 
 class _AnnoyNode(object):
@@ -80,8 +86,7 @@ class _AnnoyTree(object):
 
     def query(self, q: np.ndarray, n: int) -> np.ndarray:
         res = self._query_rec(self._root, q, n)
-        r = utils.sort_dist_to_v(q, res)
-        print("res {} from tree with roots: {}".format(r, self._root.vects))
+        r = sort_dist_to_v(q, res)
         return r
 
     def _query_rec(self, node: _AnnoyNode, q: np.ndarray, n: int) -> np.ndarray:
@@ -143,7 +148,7 @@ class AnnoyIndex(object):
                 res_pool = p.map(self._query_tree, self._trees)
         else:
             res_pool = list(map(self._query_tree, self._trees))
-        res = utils.sort_dist_to_v(q, np.vstack(res_pool))
+        res = sort_dist_to_v(q, np.vstack(res_pool))
         return res[: min(np.shape(res)[0], n)]
 
     def _build_tree(self, x: np.ndarray) -> _AnnoyTree:
@@ -164,7 +169,14 @@ class SparkAnnoy(object):
             .getOrCreate()
         )
 
-    def build(self, x: np.ndarray, k: int):
+    @property
+    def size(self) -> int:
+        return self._size
+
+    def build(self, x: np.ndarray, k: int, shuffle: bool = False):
+        if shuffle:
+            x = np.copy(x)
+            np.random.shuffle(x)
         n_trees = mp.cpu_count()
         x_split = np.array_split(x, n_trees)
         rdd = self._spark.sparkContext.parallelize(x_split)
@@ -177,17 +189,52 @@ class SparkAnnoy(object):
     def query(self, q: np.ndarray, nn: int):
         res_pool = self._trees.map(lambda x: x.query(q, nn))
         return res_pool.reduce(
-            lambda x, y: utils.sort_dist_to_v(q, np.vstack([x, y]))[
+            lambda x, y: sort_dist_to_v(q, np.vstack([x, y]))[
                 : min(nn, np.shape(x)[0] + np.shape(y)[0])
             ]
         )
 
 
 if __name__ == "__main__":
-    x = np.ndarray(shape=(32, 3))
-    for i in range(0, np.shape(x)[0]):
-        x[i] = np.array([i, i, i])
+    n = 2**20
+    m = 2**4
+    k = 2**5
+    nn = 2**3
 
-    index = SparkAnnoy("myIndex")
-    index.build(x, 5)
-    print(index.query(np.array([12, 12, 12]), 3))
+    x = np.ndarray(shape=(n, m))
+    print("created array: shape = {}".format(np.shape(x)))
+    for i in range(0, np.shape(x)[0]):
+        x[i] = np.repeat(i, m)
+    print("populated array with values")
+    np.random.shuffle(x)
+    print("shuffled array")
+
+    index_spark = SparkAnnoy("myIndex")
+    t_b_0 = time.perf_counter()
+    index_spark.build(x, k)
+    t_b_1 = time.perf_counter()
+    print("took {} s to build spark index".format(t_b_1 - t_b_0))
+
+    index_annoy = AnnoyIndex()
+    t_b_0 = time.perf_counter()
+    index_annoy.build(x=x, n_trees=mp.cpu_count(), k=k, parallelize=True, shuffle=False)
+    t_b_1 = time.perf_counter()
+    print("took {} s to build non-spark index".format(t_b_1 - t_b_0))
+
+    while True:
+        q = np.repeat(random.randint(0, n), m)
+        print(
+            "=================================================================================="
+        )
+        print("query vector:\n{}".format(q))
+        t_q_0 = time.perf_counter()
+        index_spark.query(q, nn)
+        t_q_1 = time.perf_counter()
+        print("spark index query time: {} s".format(t_q_1 - t_q_0))
+
+        t_q_0 = time.perf_counter()
+        res = index_annoy.query(q, nn)
+        t_q_1 = time.perf_counter()
+        print("non-spark index query time: {} s".format(t_q_1 - t_q_0))
+
+        time.sleep(5)
