@@ -13,7 +13,7 @@ def linear_search(x: np.ndarray, q: np.ndarray, n: int):
 
 if __name__ == "__main__":
     iters = 100  # num iters to average over
-    m = 16   # dim of each vector
+    m = 16  # dim of each vector
     nn = 20  # number of nearest neighbors
     n_cores = mp.cpu_count()  # number of CPU cores (max num. trees)
 
@@ -84,7 +84,10 @@ if __name__ == "__main__":
             perf_query_parallel[trees - 1].append(t_query_parallel)
 
             print(
-                "MP: trees: {}, build(s.t.): {}, build(parallel): {}, query (s.t.): {}, query(parallel): {}".format(
+                (
+                    "MP: trees: {}, build(s.t.): {}, build(parallel): {}, query (s.t.): {}, "
+                    + "query(parallel): {}"
+                ).format(
                     trees,
                     t_build_single_thread,
                     t_build_parallel,
@@ -96,9 +99,17 @@ if __name__ == "__main__":
     x_plt = np.arange(start=n_min, stop=n_max + 1, step=n_step)
     plt.plot(x_plt, perf_exhaustive, label="exhaustive search")
     for i in range(1, mp.cpu_count() + 1):
-        plt.plot(x_plt, perf_build_st[i - 1], label="build-single-thread-{}-trees".format(i))
-        plt.plot(x_plt, perf_build_parallel[i - 1], label="build-parallel-{}-trees".format(i))
-        plt.plot(x_plt, perf_query_st[i - 1], label="query-single-thread-{}-trees".format(i))
-        plt.plot(x_plt, perf_query_parallel[i - 1], label="query-parallel-{}-trees".format(i))
+        plt.plot(
+            x_plt, perf_build_st[i - 1], label="build-single-thread-{}-trees".format(i)
+        )
+        plt.plot(
+            x_plt, perf_build_parallel[i - 1], label="build-parallel-{}-trees".format(i)
+        )
+        plt.plot(
+            x_plt, perf_query_st[i - 1], label="query-single-thread-{}-trees".format(i)
+        )
+        plt.plot(
+            x_plt, perf_query_parallel[i - 1], label="query-parallel-{}-trees".format(i)
+        )
     plt.legend()
     plt.show()

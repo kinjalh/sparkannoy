@@ -3,6 +3,7 @@ import numpy as np
 import random
 import multiprocessing as mp
 import utils
+from pyspark.sql import SparkSession
 
 
 class _AnnoyNode(object):
@@ -54,8 +55,6 @@ class _AnnoyNode(object):
 class _AnnoyTree(object):
     def __init__(self, x: np.ndarray, k: int):
         self._size = np.shape(x)[0]
-        if k > self._size:
-            raise ValueError("k exceeds index size: k={}, size={}".format(k, self.size))
         self._root = self._build_tree(x, k)
 
     @property
@@ -68,7 +67,7 @@ class _AnnoyTree(object):
             return _AnnoyNode(x, is_leaf=True)
 
         i, j = random.sample(range(0, n), 2)
-        node = _AnnoyNode(np.stack([x[i], x[j]]))
+        node = _AnnoyNode(np.vstack([x[i], x[j]]))
 
         d_i = np.linalg.norm(x - x[i], axis=1)
         d_j = np.linalg.norm(x - x[j], axis=1)
@@ -81,11 +80,13 @@ class _AnnoyTree(object):
 
     def query(self, q: np.ndarray, n: int) -> np.ndarray:
         res = self._query_rec(self._root, q, n)
-        return utils.sort_dist_to_v(q, res)
+        r = utils.sort_dist_to_v(q, res)
+        print("res {} from tree with roots: {}".format(r, self._root.vects))
+        return r
 
     def _query_rec(self, node: _AnnoyNode, q: np.ndarray, n: int) -> np.ndarray:
         if node.is_leaf:
-            return node.vects[:min(np.shape(node.vects)[0], n)]
+            return node.vects[: min(np.shape(node.vects)[0], n)]
 
         d_left = np.linalg.norm(q - node.vects[0])
         d_right = np.linalg.norm(q - node.vects[1])
@@ -93,8 +94,10 @@ class _AnnoyTree(object):
         res = self._query_rec(node.left if left else node.right, q, n)
         size = np.shape(res)[0]
         if size < n:
-            res = np.vstack((res, self._query_rec(node.right if left else node.left, q, n)))
-        return res[:min(np.shape(res)[0], n)]
+            res = np.vstack(
+                (res, self._query_rec(node.right if left else node.left, q, n))
+            )
+        return res[: min(np.shape(res)[0], n)]
 
 
 class AnnoyIndex(object):
@@ -115,7 +118,7 @@ class AnnoyIndex(object):
         n_trees: int,
         k: int,
         parallelize: bool = True,
-        shuffle: bool = False
+        shuffle: bool = False,
     ) -> None:
         self._k = k
 
@@ -141,7 +144,7 @@ class AnnoyIndex(object):
         else:
             res_pool = list(map(self._query_tree, self._trees))
         res = utils.sort_dist_to_v(q, np.vstack(res_pool))
-        return res[:min(np.shape(res)[0], n)]
+        return res[: min(np.shape(res)[0], n)]
 
     def _build_tree(self, x: np.ndarray) -> _AnnoyTree:
         return _AnnoyTree(x, self._k)
@@ -150,11 +153,41 @@ class AnnoyIndex(object):
         return t.query(self._q, self._n)
 
 
+class SparkAnnoy(object):
+    def __init__(self, name: str):
+        self._size = 0
+        self._trees = None
+        self._name = name
+        self._spark = (
+            SparkSession.builder.appName(self._name)
+            .master("local[{}]".format(mp.cpu_count()))
+            .getOrCreate()
+        )
+
+    def build(self, x: np.ndarray, k: int):
+        n_trees = mp.cpu_count()
+        x_split = np.array_split(x, n_trees)
+        rdd = self._spark.sparkContext.parallelize(x_split)
+        self._trees = rdd.mapPartitions(
+            lambda x_i: np.array(
+                [_AnnoyTree(np.squeeze(np.array(list(x_i)), axis=0), k)]
+            )
+        )
+
+    def query(self, q: np.ndarray, nn: int):
+        res_pool = self._trees.map(lambda x: x.query(q, nn))
+        return res_pool.reduce(
+            lambda x, y: utils.sort_dist_to_v(q, np.vstack([x, y]))[
+                : min(nn, np.shape(x)[0] + np.shape(y)[0])
+            ]
+        )
+
+
 if __name__ == "__main__":
-    x = np.ndarray(shape=(1000, 3))
+    x = np.ndarray(shape=(32, 3))
     for i in range(0, np.shape(x)[0]):
         x[i] = np.array([i, i, i])
 
-    index = AnnoyIndex()
-    index.build(x=x, n_trees=5, k=10, parallelize=True, shuffle=True)
-    print(index.query(np.array([31, 31, 31]), n=20, parallelize=False))
+    index = SparkAnnoy("myIndex")
+    index.build(x, 5)
+    print(index.query(np.array([12, 12, 12]), 3))
