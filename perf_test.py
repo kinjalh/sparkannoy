@@ -1,115 +1,52 @@
 import multiprocessing as mp
-from tqdm import tqdm
 import numpy as np
 import time
-import annoy
-import utils
-import matplotlib.pyplot as plt
-
-
-def linear_search(x: np.ndarray, q: np.ndarray, n: int):
-    return utils.sort_dist_to_v(q, x)[:n]
+import random
+from annoy import AnnoyIndex
+from spark_annoy import SparkAnnoy
 
 
 if __name__ == "__main__":
-    iters = 100  # num iters to average over
-    m = 16  # dim of each vector
-    nn = 20  # number of nearest neighbors
-    n_cores = mp.cpu_count()  # number of CPU cores (max num. trees)
+    n = 2**10
+    m = 2**11
+    k = 2**5
+    nn = 2**3
 
-    n_min = 100
-    n_max = 1000
-    n_step = 100
+    x = np.ndarray(shape=(n, m))
+    print("created array: shape = {}".format(np.shape(x)))
+    for i in range(0, np.shape(x)[0]):
+        x[i] = np.repeat(i, m)
+    print("populated array with values")
+    np.random.shuffle(x)
+    print("shuffled array")
 
-    perf_exhaustive = []
-    perf_build_st = []
-    perf_build_parallel = []
-    perf_query_st = []
-    perf_query_parallel = []
-    for i in range(1, mp.cpu_count() + 1):
-        perf_build_st.append([])
-        perf_build_parallel.append([])
-        perf_query_st.append([])
-        perf_query_parallel.append([])
+    index_spark = SparkAnnoy("myIndex")
+    t_b_0 = time.perf_counter()
+    index_spark.build(x, k)
+    t_b_1 = time.perf_counter()
+    print("took {} s to build spark index".format(t_b_1 - t_b_0))
 
-    for n in range(n_min, n_max + 1, n_step):
-        print("iters = {}, size = {} x {}, nn = {}\n".format(iters, n, m, nn))
+    index_annoy = AnnoyIndex()
+    t_b_0 = time.perf_counter()
+    index_annoy.build(x=x, n_trees=mp.cpu_count(), k=k, parallelize=True, shuffle=False)
+    t_b_1 = time.perf_counter()
+    print("took {} s to build non-spark index".format(t_b_1 - t_b_0))
 
-        x = np.random.rand(n, m)
-
-        t_exh = 0
-        for i in tqdm(range(iters)):
-            q = np.random.rand(m)
-            t_0 = time.perf_counter()
-            linear_search(x, q, nn)
-            t_1 = time.perf_counter()
-            t_exh += t_1 - t_0
-        t_exh /= iters
-        perf_exhaustive.append(t_exh)
-        print("exhaustive search: {}".format(t_exh))
-
-        k = 5
-
-        for trees in range(1, mp.cpu_count() + 1):
-            t_build_single_thread = 0
-            t_build_parallel = 0
-            t_query_single_thread = 0
-            t_query_parallel = 0
-            for i in tqdm(range(iters)):
-                q = np.random.rand(m)
-                index = annoy.AnnoyIndex()
-                t_0 = time.perf_counter()
-                index.build(x=x, n_trees=trees, k=k, parallelize=False, shuffle=False)
-                t_1 = time.perf_counter()
-                index.build(x=x, n_trees=trees, k=k, parallelize=True, shuffle=False)
-                t_2 = time.perf_counter()
-                index.query(q=q, n=nn, parallelize=False)
-                t_3 = time.perf_counter()
-                index.query(q=q, n=nn, parallelize=True)
-                t_4 = time.perf_counter()
-
-                t_build_single_thread += t_1 - t_0
-                t_build_parallel += t_2 - t_1
-                t_query_single_thread += t_3 - t_2
-                t_query_parallel += t_4 - t_3
-
-            t_build_single_thread /= iters
-            t_build_parallel /= iters
-            t_query_single_thread /= iters
-            t_query_parallel /= iters
-
-            perf_build_st[trees - 1].append(t_build_single_thread)
-            perf_build_parallel[trees - 1].append(t_build_parallel)
-            perf_query_st[trees - 1].append(t_query_single_thread)
-            perf_query_parallel[trees - 1].append(t_query_parallel)
-
-            print(
-                (
-                    "MP: trees: {}, build(s.t.): {}, build(parallel): {}, query (s.t.): {}, "
-                    + "query(parallel): {}"
-                ).format(
-                    trees,
-                    t_build_single_thread,
-                    t_build_parallel,
-                    t_query_single_thread,
-                    t_query_parallel,
-                )
-            )
-
-    x_plt = np.arange(start=n_min, stop=n_max + 1, step=n_step)
-    plt.plot(x_plt, perf_exhaustive, label="exhaustive search")
-    for i in range(1, mp.cpu_count() + 1):
-        plt.plot(
-            x_plt, perf_build_st[i - 1], label="build-single-thread-{}-trees".format(i)
+    while True:
+        q = np.repeat(random.randint(0, n), m)
+        print(
+            "=================================================================================="
         )
-        plt.plot(
-            x_plt, perf_build_parallel[i - 1], label="build-parallel-{}-trees".format(i)
-        )
-        plt.plot(
-            x_plt, perf_query_st[i - 1], label="query-single-thread-{}-trees".format(i)
-        )
-        plt.plot(
-            x_plt, perf_query_parallel[i - 1], label="query-parallel-{}-trees".format(i)
-        )
-    plt.legend()
-    plt.show()
+        # print('query vector:\n{}'.format(q))
+
+        t_q_0 = time.perf_counter()
+        index_spark.query(q, nn)
+        t_q_1 = time.perf_counter()
+        print("spark index query time: {} s".format(t_q_1 - t_q_0))
+
+        t_q_0 = time.perf_counter()
+        res = index_annoy.query(q, nn)
+        t_q_1 = time.perf_counter()
+        print("non-spark index query time: {} s".format(t_q_1 - t_q_0))
+
+        time.sleep(5)
