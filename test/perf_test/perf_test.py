@@ -3,7 +3,7 @@ import numpy as np
 import time
 import random
 from spark_annoy.annoy import AnnoyIndex
-from spark_annoy.spark_annoy import SparkAnnoyIndex
+from spark_annoy.spark_annoy import SparkAnnoyIndex, SparkMode
 
 
 if __name__ == "__main__":
@@ -20,7 +20,7 @@ if __name__ == "__main__":
     np.random.shuffle(x)
     print("shuffled array")
 
-    index_spark = SparkAnnoyIndex("myIndex")
+    index_spark = SparkAnnoyIndex("myIndex", SparkMode.LOCAL)
     t_b_0 = time.perf_counter()
     index_spark.build(x, k)
     t_b_1 = time.perf_counter()

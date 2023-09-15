@@ -1,21 +1,32 @@
+from enum import Enum
 import numpy as np
-import time
 import multiprocessing as mp
 from pyspark.sql import SparkSession
 from spark_annoy.annoy_internal import _AnnoyTree, sort_dist_to_v
-from spark_annoy.annoy import AnnoyIndex
+
+
+class SparkMode(Enum):
+    LOCAL = 1
+    STANDALONE = 2
 
 
 class SparkAnnoyIndex(object):
-    def __init__(self, name: str):
+    def __init__(self, name: str, mode: SparkMode):
         self._size = 0
         self._trees = None
         self._name = name
-        self._spark = (
-            SparkSession.builder.appName(self._name)
-            .master("local[{}]".format(mp.cpu_count()))
-            .getOrCreate()
-        )
+        if mode == mode.LOCAL:
+            self._spark = (
+                SparkSession.builder.appName(self._name)
+                .master("local[{}]".format(mp.cpu_count()))
+                .getOrCreate()
+            )
+        elif mode == mode.STANDALONE:
+            self._spark = (
+                SparkSession.builder.appName(self._name)
+                .master("spark://master:7077")
+                .getOrCreate()
+            )
 
     @property
     def size(self) -> int:
