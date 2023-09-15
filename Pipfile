@@ -10,6 +10,7 @@ setuptools = "*"
 matplotlib = "*"
 tqdm = "*"
 pyspark = "*"
+pytest = "*"
 
 [dev-packages]
 

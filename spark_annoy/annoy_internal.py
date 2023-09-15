@@ -82,7 +82,7 @@ class _AnnoyTree(object):
 
         return node
 
-    def query(self, q: np.ndarray, n: int) -> np.ndarray:
+    def query(self, q: np.ndarray, n: int):
         res = self._query_rec(self._root, q, n)
         r = sort_dist_to_v(q, res)
         return r

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import numpy as np
 import multiprocessing as mp
-from annoy_internal import _AnnoyTree, sort_dist_to_v
+from spark_annoy.annoy_internal import _AnnoyTree, sort_dist_to_v
 
 
 class AnnoyIndex(object):

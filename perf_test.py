@@ -2,8 +2,8 @@ import multiprocessing as mp
 import numpy as np
 import time
 import random
-from annoy import AnnoyIndex
-from spark_annoy import SparkAnnoy
+from spark_annoy.annoy import AnnoyIndex
+from spark_annoy.spark_annoy import SparkAnnoy
 
 
 if __name__ == "__main__":
@@ -37,7 +37,6 @@ if __name__ == "__main__":
         print(
             "=================================================================================="
         )
-        # print('query vector:\n{}'.format(q))
 
         t_q_0 = time.perf_counter()
         index_spark.query(q, nn)
