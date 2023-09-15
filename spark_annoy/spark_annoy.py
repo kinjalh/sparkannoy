@@ -1,14 +1,12 @@
 import numpy as np
-import csv
 import time
-from tqdm import tqdm
 import multiprocessing as mp
 from pyspark.sql import SparkSession
 from spark_annoy.annoy_internal import _AnnoyTree, sort_dist_to_v
 from spark_annoy.annoy import AnnoyIndex
 
 
-class SparkAnnoy(object):
+class SparkAnnoyIndex(object):
     def __init__(self, name: str):
         self._size = 0
         self._trees = None
@@ -50,29 +48,3 @@ class SparkAnnoy(object):
                 : min(nn, np.shape(x)[0] + np.shape(y)[0])
             ]
         )
-
-
-if __name__ == "__main__":
-    filename = "test.csv"
-    n = 2**22
-    m = 64
-    k = 2**4
-
-    # with open(filename, "w") as f:
-    #     writer = csv.writer(f)
-    #     for i in tqdm(range(0, n)):
-    #         v = np.random.randint(low=0, high=n, size=m)
-    #         writer.writerow(v)
-
-    index = SparkAnnoy("test_csv")
-    t_start = time.perf_counter()
-    index.build_from_csv(filename, k)
-    t_end = time.perf_counter()
-    print('time to build spark index: {}'.format(t_end - t_start))
-
-    x = np.random.randint(low=0, high=n, size=(n, m))
-    index = AnnoyIndex()
-    t_start = time.perf_counter()
-    index.build(x=x, n_trees=mp.cpu_count(), k=k, parallelize=True, shuffle=False)
-    t_end = time.perf_counter()
-    print('time to build standard index: {}'.format(t_end - t_start))
