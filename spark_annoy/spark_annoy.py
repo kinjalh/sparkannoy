@@ -32,6 +32,7 @@ class SparkAnnoyIndex(object):
         return self._size
 
     def build(self, x: np.ndarray, k: int, shuffle: bool = False):
+        self._size = np.shape(x)[0]
         if shuffle:
             x = np.copy(x)
             np.random.shuffle(x)
@@ -47,6 +48,7 @@ class SparkAnnoyIndex(object):
     def build_from_csv(self, filepath: str, k: int):
         n_trees = mp.cpu_count()
         rdd = self._spark.read.csv(filepath).repartition(n_trees).rdd
+        self._size = (rdd.count())
         self._trees = rdd.mapPartitions(
             lambda x: np.array([_AnnoyTree(np.array(list(x)), k)])
         )

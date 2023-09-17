@@ -30,4 +30,3 @@ if __name__ == "__main__":
         t_avg = t_1 - t_0
     t_avg /= ITERS
     print("average query time over {} iters: {}".format(ITERS, t_avg))
-
