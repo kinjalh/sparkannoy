@@ -24,7 +24,6 @@ class SparkAnnoyIndex(object):
         elif mode == mode.STANDALONE:
             self._spark = (
                 SparkSession.builder.appName(self._name)
-                .master("spark://master:7077")
                 .getOrCreate()
             )
 
